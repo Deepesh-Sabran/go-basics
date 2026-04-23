@@ -13,12 +13,12 @@ import (
 )
 
 func CreateUser(user *models.User) error {
-	query:= "INSERT INTO users(name, age) VALUES($1, $2) RETURNING id"
-	return config.DB.QueryRow(query, user.Name, user.Age).Scan(&user.ID)
+	query:= "INSERT INTO users(name, age, password) VALUES($1, $2, $3) RETURNING id"
+	return config.DB.QueryRow(query, user.Name, user.Age, user.Password).Scan(&user.ID)
 }
 
-func GetUsers() ([]models.User, error) {
-	rows, err:= config.DB.Query("SELECT id, name, age FROM users")
+func GetUsers(limit, offset int) ([]models.User, error) {
+	rows, err:= config.DB.Query("SELECT id, name, age FROM users LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		log.Println("Get all users query failed to execute")
 		return nil, err
@@ -49,6 +49,20 @@ func GetUserById(userId int) (*models.User, error) {
 		return nil, err
 	}
 
+	return &u, nil
+}
+
+func GetUserByName(name string) (*models.User, error) {
+	query:= "SELECT id, name, age, password FROM users WHERE name=$1"
+
+	var u models.User
+	err:= config.DB.QueryRow(query, name).Scan(&u.ID, &u.Name, &u.Age, &u.Password)
+	if err != nil {
+		log.Printf("User with Name: %s is not fond", name)
+		return nil, err
+	}
+
+	log.Println("User found with Name: ", name)
 	return &u, nil
 }
 
