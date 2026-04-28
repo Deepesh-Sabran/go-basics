@@ -60,10 +60,14 @@ func AuthMiddleWare(next http.HandlerFunc) http.HandlerFunc {
 		// extract data from claims
 		userId:= claims["user_id"]
 		name:= claims["name"]
+		role := claims["role"]
+		permissions:= claims["permissions"]
 
 		// add data to request context
 		ctx:= context.WithValue(r.Context(), "user_id", userId)
 		ctx = context.WithValue(ctx, "name", name)
+		ctx = context.WithValue(ctx, "role", role)
+		ctx = context.WithValue(ctx, "permissions", permissions)
 
 		// If everything is fine → go to handler {{ passing updated value with context }}
 		next(w, r.WithContext(ctx))

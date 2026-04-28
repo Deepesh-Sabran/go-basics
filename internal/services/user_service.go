@@ -8,7 +8,9 @@ import (
 
 	"github.com/Deepesh-Sabran/go-basics/internal/models"
 	repo "github.com/Deepesh-Sabran/go-basics/internal/repository"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
+
+	// "github.com/golang-jwt/jwt"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -16,11 +18,19 @@ import (
 var jwtSecret = []byte("VENGEANCE") // letter move to environment file
 
 func Login(name, password string) (map[string]string, error) {
+	var permissions []string
+
 	// call GetUserByName repo function to get the user
 	user, err:= repo.GetUserByName(name)
 	if err != nil {
 		log.Println("User not found 😞")
 		return nil, errors.New("User not found")
+	}
+
+	if user.Role == "admin" {
+		permissions = []string{"delete_user", "update_user", "view_user"}
+	} else {
+		permissions = []string{"view_user"}
 	}
 
 	// check & compare password entered by user and stored in DB
@@ -30,11 +40,14 @@ func Login(name, password string) (map[string]string, error) {
 		return nil, errors.New("Incorrect password, please check your password")
 	}
 
-	// create access token
-	accessClaims:= jwt.MapClaims{
-		"user_id":		user.ID,
-		"name":			user.Name,
-		"exp":			time.Now().Add(time.Minute * 15).Unix(),
+	accessClaims:= models.AccessClaims{
+		UserId:			user.ID,
+		Name:			user.Name,
+		Role:			user.Role,
+		Permissions:	permissions,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 15)),
+		},
 	}
 
 	accessToken:= jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
@@ -47,6 +60,7 @@ func Login(name, password string) (map[string]string, error) {
 	// create refresh token
 	refreshClaims:= jwt.MapClaims{
 		"user_id":		user.ID,
+		"role":			user.Role,
 		"exp":			time.Now().Add(time.Hour * 24 * 7).Unix(),
 	}
 
@@ -81,10 +95,12 @@ func Refresh(refreshToken string) (string, error) {
 	}
 
 	userId:= claims["user_id"]
+	role:= claims["role"]
 	
 	// create new access token
 	newClaims:= jwt.MapClaims{
 		"user_id":	userId,
+		"role":		role,
 		"exp"	 :	time.Now().Add(time.Minute * 15).Unix(),
 	}
 
@@ -121,17 +137,23 @@ func CreateUser(user *models.User) error {
 	return nil
 }
 
-func GetUsers(page, limit int) ([]models.User, error) {
+func GetUsers(page, limit int) ([]models.User, int,  error) {
 	offset:= (page - 1) * limit
 
 	userList, err:= repo.GetUsers(limit, offset)
 	if err != nil {
 		log.Println("💔 Failed to fetch user list")
-		return nil, err
+		return nil, 0, err
+	}
+
+	userCount, err:= repo.GetUserCount()
+	if err != nil {
+		log.Println("💔 Failed to get user count")
+		return nil, 0, err
 	}
 
 	log.Println("🥳 User List fetched successfully")
-	return userList, nil
+	return userList, userCount, nil
 }
 
 func GetUserById(userId int) (*models.User, error) {

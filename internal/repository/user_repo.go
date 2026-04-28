@@ -12,13 +12,13 @@ import (
 	"github.com/Deepesh-Sabran/go-basics/internal/models"
 )
 
-func CreateUser(user *models.User) error {
+func CreateUser(user *models.User) error {	
 	query:= "INSERT INTO users(name, age, password) VALUES($1, $2, $3) RETURNING id"
 	return config.DB.QueryRow(query, user.Name, user.Age, user.Password).Scan(&user.ID)
 }
 
 func GetUsers(limit, offset int) ([]models.User, error) {
-	rows, err:= config.DB.Query("SELECT id, name, age FROM users LIMIT $1 OFFSET $2", limit, offset)
+	rows, err:= config.DB.Query("SELECT id, name, age, role FROM users LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		log.Println("Get all users query failed to execute")
 		return nil, err
@@ -29,7 +29,7 @@ func GetUsers(limit, offset int) ([]models.User, error) {
 
 	for rows.Next() {
 		var u models.User
-		rows.Scan(&u.ID, &u.Name, &u.Age)
+		rows.Scan(&u.ID, &u.Name, &u.Age, &u.Role)
 		userList = append(userList, u)
 	}
 
@@ -39,7 +39,7 @@ func GetUsers(limit, offset int) ([]models.User, error) {
 func GetUserById(userId int) (*models.User, error) {
 	var u models.User
 
-	err:= config.DB.QueryRow("SELECT id, name, age FROM users WHERE id = $1", userId).Scan(&u.ID, &u.Name, &u.Age)
+	err:= config.DB.QueryRow("SELECT id, name, age, role FROM users WHERE id = $1", userId).Scan(&u.ID, &u.Name, &u.Age, &u.Role)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("User with ID %d not found", userId)
@@ -53,10 +53,10 @@ func GetUserById(userId int) (*models.User, error) {
 }
 
 func GetUserByName(name string) (*models.User, error) {
-	query:= "SELECT id, name, age, password FROM users WHERE name=$1"
+	query:= "SELECT id, name, age, password, role FROM users WHERE name=$1"
 
 	var u models.User
-	err:= config.DB.QueryRow(query, name).Scan(&u.ID, &u.Name, &u.Age, &u.Password)
+	err:= config.DB.QueryRow(query, name).Scan(&u.ID, &u.Name, &u.Age, &u.Password, &u.Role)
 	if err != nil {
 		log.Printf("User with Name: %s is not fond", name)
 		return nil, err
@@ -64,6 +64,18 @@ func GetUserByName(name string) (*models.User, error) {
 
 	log.Println("User found with Name: ", name)
 	return &u, nil
+}
+
+func GetUserCount() (int, error) {
+	var count int
+	query:= "SELECT COUNT(*) FROM USERS"
+
+	if err:= config.DB.QueryRow(query).Scan(&count); err != nil {
+		log.Println("❌ ERROR: count query failed")
+		return 0, err
+	}
+
+	return count, nil
 }
 
 func DeleteAllUsers(ctx context.Context) error {

@@ -72,6 +72,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		Name: 		req.Name,
 		Age:		req.Age,
 		Password: 	req.Password,
+		Role:		req.Role,
 	}
 
 	err:= services.CreateUser(&user)
@@ -86,6 +87,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		ID:		user.ID,
 		Name:	user.Name,
 		Age:	user.Age,
+		Role:	user.Role,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -97,44 +99,51 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	page, limit:= 1, 5
 
 	query:= r.URL.Query()
-	pageStr:= query.Get("page")
-	limitStr:= query.Get("limit")
+	// pageStr:= query.Get("page")
+	// limitStr:= query.Get("limit")
 
-	if pageStr != "" {
-		p, err:= strconv.Atoi(pageStr)
-		if err == nil && p > 0 {
-			page = p
+	if p := query.Get("page"); p != "" {
+		if val, err := strconv.Atoi(p); err == nil && val > 0 {
+			page = val
 		}
 	}
 
-	if limitStr != "" {
-		l, err:= strconv.Atoi(limitStr)
-		if err == nil && l > 0 {
-			if l > 50 {
-				limit = 50 //cap
+	if l := query.Get("limit"); l != "" {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			if val > 50 {
+				limit = 50
 			} else {
-				limit = l
+				limit = val
 			}
 		}
 	}
 
-	userList, err:= services.GetUsers(page, limit)
+
+	userList, total, err:= services.GetUsers(page, limit)
 	if err != nil {
 		log.Println("❌ ERROR: GetUsers service error: ", err)
 		http.Error(w, "Error fetching users", http.StatusBadRequest)
 		return
 	}
 
-	var response []models.UserResponse
+	var users []models.UserResponse
 
 	for _, user:= range userList{
-		response = append(response, helper.ToUserResponse(user))
+		users = append(users, helper.ToUserResponse(user))
+	}
+
+	response:= models.PaginatedUserResponse{
+		Data: users,
+		Page:  page,
+		Limit: limit,
+		Count: total,
 	}
 
 	userId:= r.Context().Value("user_id")
 	name := r.Context().Value("name")
+	role:= r.Context().Value("role")
 
-	log.Println("🔥 Request by:", userId, name)
+	log.Println("🔥 Request by:", userId, name, role)
 
 	w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(http.StatusOK)
@@ -161,6 +170,7 @@ func GetUserById(w http.ResponseWriter, r *http.Request) {
 		ID: 	user.ID,
 		Name: 	user.Name,
 		Age: 	user.Age,
+		Role:	user.Role,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -234,6 +244,39 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Invalid ID format")
 		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+
+	// id from token
+	tokenIdFloat, okId:= r.Context().Value("user_id").(float64)
+	if !okId {
+		log.Println("🚫 You are unauthorized")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+    	return
+	}
+	tokenIdInt:= int(tokenIdFloat)
+	log.Println("tokenIdInt: ", tokenIdInt)
+
+	// check permission from context
+	hasUpdatePermission:= false
+
+	perms, ok:= r.Context().Value("permissions").([]interface{})
+	if !ok {
+		log.Println("you are forbidden to do this action")
+		http.Error(w, "User Forbidden", http.StatusForbidden)
+		return
+	}
+
+	for _, p:= range perms {
+		if p.(string) == "update_user" {
+			hasUpdatePermission = true
+			break
+		}
+	}
+
+	if !hasUpdatePermission && tokenIdInt != id {
+		log.Println("🚫 You are forbidden to do this action")
+		http.Error(w, "🚫 You are forbidden to do this action", http.StatusForbidden)
 		return
 	}
 
