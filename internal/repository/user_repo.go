@@ -13,12 +13,17 @@ import (
 )
 
 func CreateUser(user *models.User) error {	
-	query:= "INSERT INTO users(name, age, password) VALUES($1, $2, $3) RETURNING id"
-	return config.DB.QueryRow(query, user.Name, user.Age, user.Password).Scan(&user.ID)
+	query:= `
+			INSERT INTO users(name, age, password, role_id)
+			VALUES($1, $2, $3, $4)
+			RETURNING id, role_id
+		`
+	
+	return config.DB.QueryRow(query, user.Name, user.Age, user.Password, 2).Scan(&user.ID, &user.RoleID) // 2 is for by default user role
 }
 
 func GetUsers(limit, offset int) ([]models.User, error) {
-	rows, err:= config.DB.Query("SELECT id, name, age, role FROM users LIMIT $1 OFFSET $2", limit, offset)
+	rows, err:= config.DB.Query("SELECT id, name, age, role_id FROM users LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		log.Println("Get all users query failed to execute")
 		return nil, err
@@ -29,7 +34,7 @@ func GetUsers(limit, offset int) ([]models.User, error) {
 
 	for rows.Next() {
 		var u models.User
-		rows.Scan(&u.ID, &u.Name, &u.Age, &u.Role)
+		rows.Scan(&u.ID, &u.Name, &u.Age, &u.RoleID)
 		userList = append(userList, u)
 	}
 
@@ -39,7 +44,7 @@ func GetUsers(limit, offset int) ([]models.User, error) {
 func GetUserById(userId int) (*models.User, error) {
 	var u models.User
 
-	err:= config.DB.QueryRow("SELECT id, name, age, role FROM users WHERE id = $1", userId).Scan(&u.ID, &u.Name, &u.Age, &u.Role)
+	err:= config.DB.QueryRow("SELECT id, name, age, role_id FROM users WHERE id = $1", userId).Scan(&u.ID, &u.Name, &u.Age, &u.RoleID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("User with ID %d not found", userId)
@@ -53,10 +58,16 @@ func GetUserById(userId int) (*models.User, error) {
 }
 
 func GetUserByName(name string) (*models.User, error) {
-	query:= "SELECT id, name, age, password, role FROM users WHERE name=$1"
+	// query:= "SELECT id, name, age, password, role FROM users WHERE name=$1"
+	query:= `
+			SELECT u.id, u.name, u.age, u.password, u.role_id, r.name
+			FROM users u
+			JOIN roles r ON u.role_id = r.id
+			WHERE u.name = $1
+		`
 
 	var u models.User
-	err:= config.DB.QueryRow(query, name).Scan(&u.ID, &u.Name, &u.Age, &u.Password, &u.Role)
+	err:= config.DB.QueryRow(query, name).Scan(&u.ID, &u.Name, &u.Age, &u.Password, &u.RoleID, &u.Role)
 	if err != nil {
 		log.Printf("User with Name: %s is not fond", name)
 		return nil, err
@@ -64,6 +75,36 @@ func GetUserByName(name string) (*models.User, error) {
 
 	log.Println("User found with Name: ", name)
 	return &u, nil
+}
+
+func GetPermissionsByRole(roleId int) ([]string, error) {
+	query:= `
+			SELECT p.name
+			FROM permissions p
+			JOIN role_permissions rp
+			ON p.id = rp.permission_id
+			WHERE rp.role_id = $1
+		`
+
+	rows, err:= config.DB.Query(query, roleId)
+	if err != nil {
+		log.Printf("Permission with this role id %d is not found", roleId)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var perms []string
+	for rows.Next() {
+		var perm string
+		if err := rows.Scan(&perm); err != nil {
+			log.Println("❌ ERROR: during copies the columns in the current row")
+			return nil, err
+		}
+		perms = append(perms, perm)
+	}
+
+	log.Println("Permission fetched")
+	return perms, nil
 }
 
 func GetUserCount() (int, error) {
@@ -76,6 +117,17 @@ func GetUserCount() (int, error) {
 	}
 
 	return count, nil
+}
+
+func GetUserAuthInfo(userId int) (*models.User, error) {
+	var u models.User
+
+	if err:= config.DB.QueryRow("SELECT role_id FROM users WHERE id=$1", userId).Scan(&u.RoleID); err != nil {
+		log.Printf("No role found with this userId: %d", userId)
+		return nil, err
+	}
+
+	return &u, nil
 }
 
 func DeleteAllUsers(ctx context.Context) error {

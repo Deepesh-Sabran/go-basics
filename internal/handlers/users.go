@@ -83,12 +83,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// now what you get from service convert that to UserResponse model
-	res:= models.UserResponse{
-		ID:		user.ID,
-		Name:	user.Name,
-		Age:	user.Age,
-		Role:	user.Role,
-	}
+	res:= helper.ToUserResponse(user)
 
 	w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(http.StatusCreated)
@@ -141,9 +136,8 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 
 	userId:= r.Context().Value("user_id")
 	name := r.Context().Value("name")
-	role:= r.Context().Value("role")
 
-	log.Println("🔥 Request by:", userId, name, role)
+	log.Printf("🔥 Request by==> id: %d  name: %s", userId, name)
 
 	w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(http.StatusOK)
@@ -170,7 +164,7 @@ func GetUserById(w http.ResponseWriter, r *http.Request) {
 		ID: 	user.ID,
 		Name: 	user.Name,
 		Age: 	user.Age,
-		Role:	user.Role,
+		RoleID:	user.RoleID,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -179,16 +173,9 @@ func GetUserById(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetMe(w http.ResponseWriter, r *http.Request) {
-	userId:= r.Context().Value("user_id")
+	userId:= r.Context().Value("user_id").(int)
 
-	idFloat, ok:= userId.(float64)
-	if !ok {
-		log.Println("❌ ERROR: user id is not valid")
-		http.Error(w, "", http.StatusInternalServerError)
-		return
-	}
-
-	idInt:= int(idFloat)
+	idInt:= int(userId)
 
 	user, err:= services.GetUserById(idInt)
 	if err != nil {
@@ -244,39 +231,6 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Invalid ID format")
 		http.Error(w, "Invalid ID format", http.StatusBadRequest)
-		return
-	}
-
-	// id from token
-	tokenIdFloat, okId:= r.Context().Value("user_id").(float64)
-	if !okId {
-		log.Println("🚫 You are unauthorized")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-    	return
-	}
-	tokenIdInt:= int(tokenIdFloat)
-	log.Println("tokenIdInt: ", tokenIdInt)
-
-	// check permission from context
-	hasUpdatePermission:= false
-
-	perms, ok:= r.Context().Value("permissions").([]interface{})
-	if !ok {
-		log.Println("you are forbidden to do this action")
-		http.Error(w, "User Forbidden", http.StatusForbidden)
-		return
-	}
-
-	for _, p:= range perms {
-		if p.(string) == "update_user" {
-			hasUpdatePermission = true
-			break
-		}
-	}
-
-	if !hasUpdatePermission && tokenIdInt != id {
-		log.Println("🚫 You are forbidden to do this action")
-		http.Error(w, "🚫 You are forbidden to do this action", http.StatusForbidden)
 		return
 	}
 

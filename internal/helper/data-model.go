@@ -7,6 +7,6 @@ func ToUserResponse(user models.User) models.UserResponse {
 		ID: 	user.ID,
 		Name:	user.Name,
 		Age: 	user.Age,
-		Role:	user.Role,
+		RoleID:	user.RoleID,
 	}
 }

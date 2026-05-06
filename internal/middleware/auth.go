@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Deepesh-Sabran/go-basics/internal/models"
+	repo "github.com/Deepesh-Sabran/go-basics/internal/repository"
+	"github.com/Deepesh-Sabran/go-basics/internal/services"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -33,7 +36,7 @@ func AuthMiddleWare(next http.HandlerFunc) http.HandlerFunc {
 		tokenString := parts[1]
 
 		// Parse & validate token
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.ParseWithClaims(tokenString, &models.TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
 
 			// Security check
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -50,23 +53,30 @@ func AuthMiddleWare(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// extract claims and check if token is valid or not
-		claims, ok:= token.Claims.(jwt.MapClaims)
+		claims, ok:= token.Claims.(*models.TokenClaims)
 		if !ok {
 			log.Println("❌ Invalid token:", err)
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		// extract data from claims
-		userId:= claims["user_id"]
-		name:= claims["name"]
-		role := claims["role"]
-		permissions:= claims["permissions"]
+		user, err:= repo.GetUserAuthInfo(claims.UserId)
+		if err != nil {
+			log.Println("User not found 😞")
+			http.Error(w, "User not found 😞", http.StatusBadRequest)
+			return
+		}
+
+		permissions, err:= services.GetPermissionsByRole(user.RoleID)
+		if err != nil {
+			log.Println("No Permission found")
+			http.Error(w, "No Permission Found", http.StatusBadRequest)
+			return
+		}
 
 		// add data to request context
-		ctx:= context.WithValue(r.Context(), "user_id", userId)
-		ctx = context.WithValue(ctx, "name", name)
-		ctx = context.WithValue(ctx, "role", role)
+		ctx:= context.WithValue(r.Context(), "user_id", claims.UserId)
+		ctx = context.WithValue(ctx, "name", claims.Name)
 		ctx = context.WithValue(ctx, "permissions", permissions)
 
 		// If everything is fine → go to handler {{ passing updated value with context }}

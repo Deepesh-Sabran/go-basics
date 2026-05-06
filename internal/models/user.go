@@ -16,7 +16,8 @@ type User struct {
 	Name     string
 	Age      int
 	Password string
-	Role 	 string `json:"role"`
+	RoleID	 int		// for db relation between users -> roles table
+	Role 	 string		// for response / JWT use
 }
 
 // response struct (for output)
@@ -24,7 +25,7 @@ type UserResponse struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 	Age  int    `json:"age"`
-	Role string	`json:"role"`
+	RoleID int  `json:"role_id"`
 }
 
 // paginated response struct
@@ -35,10 +36,8 @@ type PaginatedUserResponse struct {
 	Limit	int				`json:"limit"`
 }
 
-type AccessClaims struct {
-    UserId      int     `json:"user_id"`
+type TokenClaims struct {
+    UserId      int      `json:"user_id"`
     Name        string   `json:"name"`
-    Role        string   `json:"role"`
-    Permissions []string `json:"permissions"`
     jwt.RegisteredClaims
 }
