@@ -62,8 +62,8 @@ func AuthMiddleWare(next http.HandlerFunc) http.HandlerFunc {
 
 		user, err:= repo.GetUserAuthInfo(claims.UserId)
 		if err != nil {
-			log.Println("User not found 😞")
-			http.Error(w, "User not found 😞", http.StatusBadRequest)
+			log.Println("User not found 😞 --Auth")
+			http.Error(w, "User not found 😞 --Auth", http.StatusBadRequest)
 			return
 		}
 

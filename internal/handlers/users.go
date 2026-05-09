@@ -205,18 +205,26 @@ func DeleteAllUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteUserById(w http.ResponseWriter, r *http.Request) {
+	// take ID from path param
 	idStr:= r.PathValue("id")
-	id, err:= strconv.Atoi(idStr)
+	pathId, err:= strconv.Atoi(idStr)
 	if err != nil {
 		log.Println("Invalid ID format")
 		http.Error(w, "Invalid ID format", http.StatusBadRequest)
 		return
 	}
 
-	err = services.DeleteUserById(r.Context(), id)
-	if err != nil {
-		log.Println("❌ ERROR: DeleteUserById service error: ", err)
-		http.Error(w, "Error deleting user", http.StatusBadGateway)
+	// take ID from context
+	tokenId, ok:= r.Context().Value("user_id").(int)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// call new DeleteUserWithAudit function
+	if err:= services.DeleteUserWithAudit(r.Context(), tokenId, pathId); err != nil {
+		log.Println("❌ ERROR: DeleteUserWithAudit service error: ", err)
+		http.Error(w, "Error deleting user", http.StatusBadRequest)
 		return
 	}
 

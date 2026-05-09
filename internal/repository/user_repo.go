@@ -154,7 +154,7 @@ func DeleteUserById(ctx context.Context, userId int) error {
 
 	check, err:= res.RowsAffected()
 	if err != nil {
-		log.Println("❌ ERROR: In checking rows affected after UPDATE query runs.")
+		log.Println("❌ ERROR: In checking rows affected after DELETE query runs.")
 		return err
 	}
 
@@ -164,6 +164,45 @@ func DeleteUserById(ctx context.Context, userId int) error {
 	}
 
 	println("😉 User deleted from DB")
+	return nil
+}
+
+func DeleteUserTx(ctx context.Context, tx *sql.Tx, userId int) error {
+	query:= "DELETE FROM users WHERE id = $1"
+
+	res, err:= tx.ExecContext(ctx, query, userId)
+	if err != nil {
+		log.Println("Error in delete user transaction")
+		return err
+	}
+
+	check, err:= res.RowsAffected()
+	if err != nil {
+		log.Println("❌ ERROR: In checking rows affected after DELETE query(transaction) runs.")
+		return err
+	}
+
+	if check == 0 {
+		log.Println("🚨 0 rows affected, enter a valid ID")
+		return errors.New("User not found")
+	}
+
+	println("😉 User deleted from DB")
+	return nil
+}
+
+func CreateAuditLogTx(ctx context.Context, tx *sql.Tx, actorId int, action string, targetId int) error {
+	query:= `
+				INSERT INTO audits(actor_id, action, target_id)
+				VALUES($1, $2, $3)
+			`
+
+	_, err:= tx.ExecContext(ctx, query, actorId, action, targetId)
+	if err != nil {
+		log.Println("Insertion failed on Audits")
+		return err
+	}
+
 	return nil
 }
 

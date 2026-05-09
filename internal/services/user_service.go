@@ -134,11 +134,33 @@ func CreateUser(user *models.User) error {
 	if err != nil {
 		log.Println("💔 Failed to create user: ", err)
 		if pgErr, ok := err.(*pq.Error); ok {
-        if pgErr.Code == "23505" {
-            return errors.New("Username already taken")
-        }
-    }
+			if pgErr.Code == "23505" {
+				return errors.New("Username already taken")
+			}
+    	}
 		return err
+	}
+
+	// background job using goroutine
+	// go func(userId int, name string) {
+	// 	log.Printf("Background job: user created id: %d and name: %s", userId, name)
+	// }(user.ID, user.Name)
+
+	// background job using redis
+	job:= models.EmailJob{
+		UserID: user.ID,
+		Name: 	user.Name,
+		Email: 	"demo@example.com",
+	}
+
+	// marshal the data --> Producer
+	data, err:= json.Marshal(job)
+	if err == nil {
+		config.RedisClient.LPush(
+			config.Ctx,
+			"email_jobs",
+			data,
+		)
 	}
 
 	log.Println("User SignUp successful 🥳")
@@ -234,6 +256,37 @@ func DeleteUserById(ctx context.Context, userId int) error {
 	}
 
 	log.Println("😉 User deleted successfully")
+	return nil
+}
+
+func DeleteUserWithAudit(ctx context.Context, actorId, targetId int) error {
+	// begin the transaction
+	tx, err:= config.DB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Println("Error occurred, on beginning of transaction")
+		return err
+	}
+
+	defer tx.Rollback()
+
+	// call delete transaction repo function
+	if err:= repo.DeleteUserTx(ctx, tx, targetId); err != nil {
+		log.Println("Error deleting user within transaction")
+		return err
+	}
+
+	// call create audit transaction repo function
+	if err := repo.CreateAuditLogTx(ctx, tx, actorId, "delete_user", targetId); err != nil {
+		log.Println("Error creating audit for user deletion")
+		return err
+	}
+
+	// commit transaction
+	if err := tx.Commit(); err != nil {
+		log.Println("Transaction Incomplete")
+		return err
+	}
+
 	return nil
 }
 

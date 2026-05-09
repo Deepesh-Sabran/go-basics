@@ -41,3 +41,10 @@ type TokenClaims struct {
     Name        string   `json:"name"`
     jwt.RegisteredClaims
 }
+
+type EmailJob struct {
+	UserID int    `json:"user_id"`
+	Name   string `json:"name"`
+	Email  string `json:"email"`
+	Retries int	  `json:"retries"`
+}
