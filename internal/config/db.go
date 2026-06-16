@@ -10,18 +10,24 @@ import (
 var DB *sql.DB
 
 func ConnectDB() {
-	connStr := "user=apple dbname=goapp sslmode=disable"
+	connStr := GetDatabaseURL()
 
-	db, err:= sql.Open("postgres", connStr)
-	if err != nil{
-		log.Fatal("DB connection error: ", err)
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal("❌ DB connection error: ", err)
 	}
 
 	err = db.Ping()
-	if err != nil{
-		log.Fatal("DB not reachable: ", err)
+	if err != nil {
+		log.Fatal("❌ DB not reachable: ", err)
+	}
+
+	// Set connection pool settings for production
+	if IsProduction() {
+		db.SetMaxOpenConns(25)
+		db.SetMaxIdleConns(5)
 	}
 
 	DB = db
-	log.Println("Successfully connected to DB !!")
+	log.Println("✅ Successfully connected to DB !!")
 }

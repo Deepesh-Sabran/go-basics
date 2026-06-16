@@ -44,12 +44,12 @@ func Login(name, password string) (map[string]string, error) {
 		},
 	}
 
-	accessToken:= jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	accessString, err:= accessToken.SignedString(jwtSecret)
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
+	accessString, err := accessToken.SignedString(config.GetJWTSecret())
 	if err != nil {
 		log.Println("❌ ERROR: ", err)
-        return nil, appErrors.InternalServerError("failed to generate access token")
-    }
+		return nil, appErrors.InternalServerError("failed to generate access token")
+	}
 
 	// create refresh token
 	refreshClaims:= models.TokenClaims{
@@ -60,14 +60,23 @@ func Login(name, password string) (map[string]string, error) {
 		},
 	}
 
-	refreshToken:= jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshString, err:= refreshToken.SignedString(jwtSecret)
+	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	refreshString, err := refreshToken.SignedString(config.GetJWTSecret())
 	if err != nil {
 		log.Println("❌ ERROR: ", err)
-        return nil, appErrors.InternalServerError("failed to generate refresh token")
-    }
+		return nil, appErrors.InternalServerError("failed to generate refresh token")
+	}
 
 	cacheRefreshToken:= fmt.Sprintf("token:refresh:%s", refreshString)
+
+	config.RedisClient.Set(
+		config.Ctx,
+		cacheRefreshToken,
+		user.ID,
+		7*24*time.Hour,
+	)
+
+	cacheRefreshToken = fmt.Sprintf("token:refresh:%s", refreshString)
 
 	config.RedisClient.Set(
 		config.Ctx,
@@ -98,12 +107,12 @@ func Refresh(refreshToken string) (string, error) {
 	}
 
 	// parsing token with claims
-	token, err:= jwt.ParseWithClaims(refreshToken, &models.TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(refreshToken, &models.TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
 
-		return jwtSecret, nil
+		return config.GetJWTSecret(), nil
 	})
 
 	if err != nil || !token.Valid {
@@ -136,12 +145,12 @@ func Refresh(refreshToken string) (string, error) {
 		},
 	}
 
-	newToken:= jwt.NewWithClaims(jwt.SigningMethodHS256, newClaims)
-	newTokenString, err:= newToken.SignedString(jwtSecret)
+	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, newClaims)
+	newTokenString, err := newToken.SignedString(config.GetJWTSecret())
 	if err != nil {
 		log.Println("❌ ERROR: Invalid access token", err)
-        return "", err
-    }
+		return "", err
+	}
 
 	log.Println("New Access token generated 🥳")
 	return newTokenString, nil

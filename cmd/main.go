@@ -16,6 +16,9 @@ import (
 )
 
 func main() {
+	// Load secrets and configuration first
+	config.LoadSecrets()
+
 	config.ConnectDB()
 	config.ConnectRedis()
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Deepesh-Sabran/go-basics/internal/config"
 	"github.com/Deepesh-Sabran/go-basics/internal/models"
 	repo "github.com/Deepesh-Sabran/go-basics/internal/repository"
 	"github.com/Deepesh-Sabran/go-basics/internal/services"
@@ -41,7 +42,7 @@ func AuthMiddleWare(next http.HandlerFunc) http.HandlerFunc {
 				return nil, fmt.Errorf("unexpected signing method")
 			}
 
-			return jwtSecret, nil
+			return config.GetJWTSecret(), nil
 		})
 
 		if err != nil || !token.Valid {
@@ -51,29 +52,29 @@ func AuthMiddleWare(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// extract claims and check if token is valid or not
-		claims, ok:= token.Claims.(*models.TokenClaims)
+		claims, ok := token.Claims.(*models.TokenClaims)
 		if !ok {
 			log.Println("❌ Invalid token:", err)
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		user, err:= repo.GetUserAuthInfo(claims.UserId)
+		user, err := repo.GetUserAuthInfo(claims.UserId)
 		if err != nil {
-			log.Println("User not found 😞 --Auth")
+			log.Println("❌ User not found 😞 --Auth")
 			http.Error(w, "User not found 😞 --Auth", http.StatusBadRequest)
 			return
 		}
 
-		permissions, err:= services.GetPermissionsByRole(user.RoleID)
+		permissions, err := services.GetPermissionsByRole(user.RoleID)
 		if err != nil {
-			log.Println("No Permission found")
+			log.Println("❌ No Permission found")
 			http.Error(w, "No Permission Found", http.StatusBadRequest)
 			return
 		}
 
 		// add data to request context
-		ctx:= context.WithValue(r.Context(), "user_id", claims.UserId)
+		ctx := context.WithValue(r.Context(), "user_id", claims.UserId)
 		ctx = context.WithValue(ctx, "name", claims.Name)
 		ctx = context.WithValue(ctx, "permissions", permissions)
 
