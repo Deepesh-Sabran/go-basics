@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -15,9 +14,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
-
-	// "github.com/golang-jwt/jwt"
-
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -99,11 +95,11 @@ func Refresh(refreshToken string) (string, error) {
 	_, err:= config.RedisClient.Get(config.Ctx, cacheRefreshToken).Result()
 	if err == redis.Nil {
 		log.Println("refresh token not found in redis")
-		return "", errors.New("invalid refresh token, login again")
+		return "", appErrors.Unauthorized("invalid refresh token, login again")
 	}
 	if err != nil {
 		log.Println("redis error:", err)
-		return "", err
+		return "", appErrors.InternalServerErrorWithErr("redis error", err)
 	}
 
 	// parsing token with claims
@@ -121,20 +117,20 @@ func Refresh(refreshToken string) (string, error) {
 			cacheRefreshToken,
 		)
 		log.Println("❌ ERROR: Invalid refresh token")
-		return "", errors.New("Invalid refresh token, login again")
+		return "", appErrors.Unauthorized("Invalid refresh token, login again")
 	}
 
 	claims, ok:= token.Claims.(*models.TokenClaims)
 	if !ok {
 		config.RedisClient.Del(config.Ctx, cacheRefreshToken)
-		return "", errors.New("Invalid Claims")
+		return "", appErrors.Unauthorized("Invalid claims")
 	}
 
 	// fetch fresh user
 	user, err:= repo.GetUserById(claims.UserId)
 	if err != nil {
 		log.Println("💔 Failed to fetch a user")
-		return "", err
+		return "", appErrors.NotFoundWithErr("user not found", err)
 	}
 
 	newClaims:= models.TokenClaims{
@@ -149,7 +145,7 @@ func Refresh(refreshToken string) (string, error) {
 	newTokenString, err := newToken.SignedString(config.GetJWTSecret())
 	if err != nil {
 		log.Println("❌ ERROR: Invalid access token", err)
-		return "", err
+		return "", appErrors.InternalServerErrorWithErr("failed to generate access token", err)
 	}
 
 	log.Println("New Access token generated 🥳")
@@ -158,13 +154,13 @@ func Refresh(refreshToken string) (string, error) {
 
 func CreateUser(user *models.User) error {
 	if user.Name == "" || user.Age <= 0 || user.Password == "" {
-		return errors.New("Invalid user data")
+		return appErrors.BadRequest("Invalid user data")
 	}
 
 	hashedPassword, err:= bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Println("❌ ERROR: failed to hash password: ", err)
-		return err
+		return appErrors.InternalServerErrorWithErr("failed to hash password", err)
 	}
 
 	user.Password = string(hashedPassword)
@@ -174,16 +170,11 @@ func CreateUser(user *models.User) error {
 		log.Println("💔 Failed to create user: ", err)
 		if pgErr, ok := err.(*pq.Error); ok {
 			if pgErr.Code == "23505" {
-				return errors.New("Username already taken")
+				return appErrors.Conflict("Username already taken")
 			}
     	}
-		return err
+		return appErrors.InternalServerErrorWithErr("failed to create user", err)
 	}
-
-	// background job using goroutine
-	// go func(userId int, name string) {
-	// 	log.Printf("Background job: user created id: %d and name: %s", userId, name)
-	// }(user.ID, user.Name)
 
 	// background job using redis
 	job:= models.EmailJob{
@@ -331,7 +322,7 @@ func DeleteUserWithAudit(ctx context.Context, actorId, targetId int) error {
 
 func UpdateUser(id int, updates map[string]interface{}) error {
 	if len(updates) == 0 {
-		return errors.New("No data provided")
+		return appErrors.BadRequest("No data provided")
 	}
 
 	// white listing the fields which are allowed
@@ -348,13 +339,13 @@ func UpdateUser(id int, updates map[string]interface{}) error {
 	if val, ok := updates["password"]; ok {
 		passwordStr, ok := val.(string)
 		if !ok {
-			return errors.New("Invalid password format")
+			return appErrors.BadRequest("Invalid password format")
 		}
 
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(passwordStr), bcrypt.DefaultCost)
 		if err != nil {
 			log.Println("❌ ERROR: failed to hash password:", err)
-			return err
+			return appErrors.InternalServerErrorWithErr("failed to hash password", err)
 		}
 
 		cleanUpdates["password"] = string(hashedPassword) // store as string
@@ -362,17 +353,21 @@ func UpdateUser(id int, updates map[string]interface{}) error {
 
 	// after cleaning if it's empty ...
 	if len(cleanUpdates) == 0 {
-		return errors.New("Invalid fields provided")
+		return appErrors.BadRequest("Invalid fields provided")
 	}
 
 	if err:= repo.UpdateUser(id, cleanUpdates); err != nil {
 		if pgErr, ok := err.(*pq.Error); ok {
 			if pgErr.Code == "23505" {
-				return errors.New("username already taken")
+				return appErrors.Conflict("username already taken")
 			}
 		}
 
-		return err
+		if err.Error() == "no rows" {
+			return appErrors.NotFound("User not found")
+		}
+
+		return appErrors.InternalServerErrorWithErr("failed to update user", err)
 	}
 
 	log.Println("🥳 User updated successfully")
