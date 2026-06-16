@@ -48,7 +48,7 @@ func GetUserById(userId int) (*models.User, error) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("User with ID %d not found", userId)
-			return nil, nil
+			return nil, sql.ErrNoRows
 		}
 		log.Println("Database error:", err)
 		return nil, err
@@ -207,10 +207,6 @@ func CreateAuditLogTx(ctx context.Context, tx *sql.Tx, actorId int, action strin
 }
 
 func UpdateUser(id int, updates map[string]interface{}) error {
-	if len(updates) == 0 {
-		return nil
-	}
-
 	query:= "UPDATE users SET "
 	var args []interface{}
 	var parts []string

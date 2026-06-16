@@ -7,7 +7,21 @@ type CreateUserRequest struct {
 	Name     string `json:"name"`
 	Age      int    `json:"age"`
 	Password string `json:"password"`
-	Role 	 string	`json:"role"`
+}
+
+type LoginRequest struct {
+	Name     string `json:"name"`
+	Password string `json:"password"`
+}
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type UpdateUserRequest struct {
+	Name     *string `json:"name,omitempty"`
+	Age      *int    `json:"age,omitempty"`
+	Password *string `json:"password,omitempty"`
 }
 
 // model struct (DB)
@@ -47,4 +61,22 @@ type EmailJob struct {
 	Name   string `json:"name"`
 	Email  string `json:"email"`
 	Retries int	  `json:"retries"`
+}
+
+func (r UpdateUserRequest) ToUpdatesMap() map[string]interface{} {
+	updates:= make(map[string]interface{})
+
+	if r.Name != nil {
+		updates["name"] = *r.Name
+	}
+
+	if r.Age != nil {
+		updates["age"] = *r.Age
+	}
+
+	if r.Password != nil {
+		updates["password"] = *r.Password
+	}
+
+	return updates
 }

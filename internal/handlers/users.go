@@ -6,25 +6,41 @@ import (
 	"net/http"
 	"strconv"
 
+	appErrors "github.com/Deepesh-Sabran/go-basics/internal/errors"
 	"github.com/Deepesh-Sabran/go-basics/internal/helper"
 	"github.com/Deepesh-Sabran/go-basics/internal/models"
 	"github.com/Deepesh-Sabran/go-basics/internal/services"
+	"github.com/Deepesh-Sabran/go-basics/internal/validation"
+	"github.com/Deepesh-Sabran/go-basics/pkg/response"
 )
 
 func Login(w http.ResponseWriter, r *http.Request) {
-	var req models.CreateUserRequest
+	var req models.LoginRequest
+	
+	decoder:= json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
 
-	if err:= json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Println("Invalid request for login")
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+	if err:= decoder.Decode(&req); err != nil {
+		log.Println("❌ ERROR: ", err)
+		response.HandleError(w, appErrors.BadRequest("invalid request body"))
+		return
+	}
+
+	if decoder.More() {
+		response.HandleError(w, appErrors.BadRequest("invalid request body"))
+		return
+	}
+
+	if err:= validation.ValidateLogin(req); err != nil {
+		response.HandleError(w, err)
 		return
 	}
 
 	// get the token by calling the service
 	tokens, err:= services.Login(req.Name, req.Password)
 	if err != nil {
-		log.Println("Unauthorized user")
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		log.Println("❌ ERROR: ", err)
+		response.HandleError(w, err)
 		return
 	}
 
@@ -34,13 +50,24 @@ func Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func Refresh(w http.ResponseWriter, r *http.Request) {
-	var req struct{
-		RefreshToken string `json:"refreshToken"`
-	}
+	var req models.RefreshRequest
 
-	if err:= json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder:=json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err:= decoder.Decode(&req); err != nil {
 		log.Println("Invalid request for generating Refresh Token")
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if decoder.More() {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err:= validation.ValidateRefresh(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -52,7 +79,7 @@ func Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response:= map[string]string{
-		"accessToken": newAccessToken,
+		"access_token": newAccessToken,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -63,8 +90,23 @@ func Refresh(w http.ResponseWriter, r *http.Request) {
 func CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req models.CreateUserRequest
 
-	if err:= json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder:= json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err:= decoder.Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if decoder.More() {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// validate inputs using validation helper
+	if err:= validation.ValidateCreateUser(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	// convert req to user model because service is using DB model
@@ -72,7 +114,6 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		Name: 		req.Name,
 		Age:		req.Age,
 		Password: 	req.Password,
-		Role:		req.Role,
 	}
 
 	err:= services.CreateUser(&user)
@@ -155,8 +196,8 @@ func GetUserById(w http.ResponseWriter, r *http.Request) {
 
 	user, err:= services.GetUserById(id)
 	if err != nil {
-		log.Println("❌ ERROR: GetUserById service error: ", err)
-		http.Error(w, "Error fetching user", http.StatusBadRequest)
+		log.Println("❌ ERROR: ", err)
+		response.HandleError(w, err)
 		return
 	}
 
@@ -234,6 +275,8 @@ func DeleteUserById(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
+	var req models.UpdateUserRequest
+
 	idStr:= r.PathValue("id")
 	id, err:= strconv.Atoi(idStr)
 	if err != nil {
@@ -242,15 +285,39 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var updates map[string]interface{}
-	if err:= json.NewDecoder(r.Body).Decode(&updates); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusInternalServerError)
+	decoder:= json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err:= decoder.Decode(&req); err != nil {
+		log.Println("update decode error:", err)
+		http.Error(w, "Invalid request body in Update", http.StatusBadRequest)
 		return
 	}
 
+	if decoder.More() {
+		http.Error(w, "Invalid request body in update", http.StatusBadRequest)
+		return
+	}
+
+	if err:= validation.ValidateUpdateUser(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	updates := req.ToUpdatesMap()
+
 	err = services.UpdateUser(id, updates)
 	if err != nil {
-		log.Println("❌ ERROR: UpdateUser service error: ", err)
+		if err.Error() == "username already taken" {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+
+		if err.Error() == "User not found" {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
 		http.Error(w, "Error updating user", http.StatusInternalServerError)
 		return
 	}
@@ -258,4 +325,41 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "User Updated Successfully"})
+}
+
+func Logout(w http.ResponseWriter, r *http.Request) {
+	var req models.RefreshRequest
+
+	decoder:= json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err:= decoder.Decode(&req); err != nil {
+		log.Println("Invalid request for logout")
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if decoder.More() {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err:= validation.ValidateRefresh(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err:= services.Logout(req.RefreshToken); err != nil {
+		log.Println("Error during logout")
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	log.Println("Logged out successfully")
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Logged out successfully",
+	})
 }
