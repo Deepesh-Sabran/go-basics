@@ -9,48 +9,46 @@ import (
 	"time"
 
 	"github.com/Deepesh-Sabran/go-basics/internal/config"
+	appErrors "github.com/Deepesh-Sabran/go-basics/internal/errors"
 	"github.com/Deepesh-Sabran/go-basics/internal/models"
 	repo "github.com/Deepesh-Sabran/go-basics/internal/repository"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 
 	// "github.com/golang-jwt/jwt"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtSecret = []byte("VENGEANCE") // letter move to environment file
-
 func Login(name, password string) (map[string]string, error) {
-	// var permissions []string
-
 	// call GetUserByName repo function to get the user
 	user, err:= repo.GetUserByName(name)
 	if err != nil {
 		log.Println("User not found 😞")
-		return nil, errors.New("User not found")
+		return nil, appErrors.NotFound("User not found")
 	}
 
 	// check & compare password entered by user and stored in DB
 	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
 	if err != nil {
-		log.Println("Invalid password")
-		return nil, errors.New("Incorrect password, please check your password")
+		log.Println("Invalid credentials")
+		return nil, appErrors.Unauthorized("invalid credentials")
 	}
 
 	accessClaims:= models.TokenClaims{
 		UserId:			user.ID,
 		Name:			user.Name,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 15)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 10)),
 		},
 	}
 
 	accessToken:= jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
 	accessString, err:= accessToken.SignedString(jwtSecret)
 	if err != nil {
-		log.Println("❌ ERROR: Invalid access token", err)
-        return nil, err
+		log.Println("❌ ERROR: ", err)
+        return nil, appErrors.InternalServerError("failed to generate access token")
     }
 
 	// create refresh token
@@ -65,30 +63,61 @@ func Login(name, password string) (map[string]string, error) {
 	refreshToken:= jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
 	refreshString, err:= refreshToken.SignedString(jwtSecret)
 	if err != nil {
-		log.Println("❌ ERROR: Invalid refresh token", err)
-        return nil, err
+		log.Println("❌ ERROR: ", err)
+        return nil, appErrors.InternalServerError("failed to generate refresh token")
     }
+
+	cacheRefreshToken:= fmt.Sprintf("token:refresh:%s", refreshString)
+
+	config.RedisClient.Set(
+		config.Ctx,
+		cacheRefreshToken,
+		user.ID,
+		7*24*time.Hour,
+	)
 
 	log.Println("User LogIn successful 🥳")
 
 	return map[string]string{
-		"access token": accessString,
-		"refresh token": refreshString,
+		"access_token": accessString,
+		"refresh_token": refreshString,
 	}, nil
 }
 
 func Refresh(refreshToken string) (string, error) {
+	// check refresh token is there in Redis or not
+	cacheRefreshToken:= fmt.Sprintf("token:refresh:%s", refreshToken)
+	_, err:= config.RedisClient.Get(config.Ctx, cacheRefreshToken).Result()
+	if err == redis.Nil {
+		log.Println("refresh token not found in redis")
+		return "", errors.New("invalid refresh token, login again")
+	}
+	if err != nil {
+		log.Println("redis error:", err)
+		return "", err
+	}
+
+	// parsing token with claims
 	token, err:= jwt.ParseWithClaims(refreshToken, &models.TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+
 		return jwtSecret, nil
 	})
 
 	if err != nil || !token.Valid {
+		config.RedisClient.Del(
+			config.Ctx,
+			cacheRefreshToken,
+		)
 		log.Println("❌ ERROR: Invalid refresh token")
 		return "", errors.New("Invalid refresh token, login again")
 	}
 
 	claims, ok:= token.Claims.(*models.TokenClaims)
 	if !ok {
+		config.RedisClient.Del(config.Ctx, cacheRefreshToken)
 		return "", errors.New("Invalid Claims")
 	}
 
@@ -114,6 +143,7 @@ func Refresh(refreshToken string) (string, error) {
         return "", err
     }
 
+	log.Println("New Access token generated 🥳")
 	return newTokenString, nil
 }
 
@@ -225,12 +255,12 @@ func GetUserById(userId int) (*models.User, error) {
 	user, err:= repo.GetUserById(userId)
 	if err != nil {
 		log.Println("💔 Failed to fetch a user")
-		return nil, err
+		return nil, appErrors.NotFound("failed to fetch user")
 	}
 
 	if user == nil {
 		log.Println("😞 User not found")
-		return nil, errors.New("User not found")
+		return nil, appErrors.NotFound("User not found")
 	}
 
 	log.Println("🥳 User fetched successfully")
@@ -326,12 +356,34 @@ func UpdateUser(id int, updates map[string]interface{}) error {
 		return errors.New("Invalid fields provided")
 	}
 
-	err:= repo.UpdateUser(id, cleanUpdates)
-	if err != nil {
-		log.Println("❌ ERROR: In updating users")
+	if err:= repo.UpdateUser(id, cleanUpdates); err != nil {
+		if pgErr, ok := err.(*pq.Error); ok {
+			if pgErr.Code == "23505" {
+				return errors.New("username already taken")
+			}
+		}
+
 		return err
 	}
 
 	log.Println("🥳 User updated successfully")
+	return nil
+}
+
+func Logout(refreshToken string) error {
+	cacheRefreshToken:= fmt.Sprintf("token:refresh:%s", refreshToken)
+
+	if err:= config.RedisClient.Del(config.Ctx, cacheRefreshToken).Err(); err != nil {
+		log.Println("redis error:", err)
+		return err
+	}
+
+	// Removed this so that the logout is been idempotent with res:200 OK
+	// if deleted == 0 {
+	// 	log.Println("Refresh token not found")
+	// 	return errors.New("refresh token not found")
+	// }
+
+	log.Println("Logged out successfully")
 	return nil
 }

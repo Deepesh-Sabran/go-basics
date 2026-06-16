@@ -26,6 +26,7 @@ func main() {
 	http.HandleFunc("POST /login", handlers.Login)
 	http.HandleFunc("POST /refresh", handlers.Refresh)
 	http.HandleFunc("POST /signup", handlers.CreateUser)
+	http.HandleFunc("POST /logout", handlers.Logout)
 	http.HandleFunc("GET /get-users", middleware.AuthMiddleWare(handlers.GetUsers))
 	http.HandleFunc("GET /get-user/{id}", middleware.AuthMiddleWare(middleware.RequireOwnershipOrPermission("view_user")(handlers.GetUserById)))
 	http.HandleFunc("GET /me", middleware.AuthMiddleWare(handlers.GetMe))

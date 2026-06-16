@@ -13,8 +13,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret = []byte("VENGEANCE") // letter move to environment variable
-
 func AuthMiddleWare(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
