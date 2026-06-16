@@ -57,34 +57,30 @@ func Refresh(w http.ResponseWriter, r *http.Request) {
 
 	if err:= decoder.Decode(&req); err != nil {
 		log.Println("Invalid request for generating Refresh Token")
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid request body"))
 		return
 	}
 
 	if decoder.More() {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid request body"))
 		return
 	}
 
 	if err:= validation.ValidateRefresh(req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		response.HandleError(w, err)
 		return
 	}
 
 	newAccessToken, err:= services.Refresh(req.RefreshToken) 
 	if err != nil {
 		log.Println("❌ ERROR: Invalid refresh token")
-		http.Error(w, "Invalid refresh token", http.StatusUnauthorized)
+		response.HandleError(w, err)
 		return
 	}
 
-	response:= map[string]string{
+	response.HandleSuccess(w, http.StatusOK, map[string]string{
 		"access_token": newAccessToken,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	})
 }
 
 func CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -94,18 +90,18 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 
 	if err:= decoder.Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid request body"))
 		return
 	}
 
 	if decoder.More() {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid request body"))
 		return
 	}
 
 	// validate inputs using validation helper
 	if err:= validation.ValidateCreateUser(req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		response.HandleError(w, err)
 		return
 	}
 
@@ -119,24 +115,20 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	err:= services.CreateUser(&user)
 	if err != nil {
 		log.Println("❌ ERROR: CreateUser service error: ", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		response.HandleError(w, err)
 		return
 	}
 
 	// now what you get from service convert that to UserResponse model
 	res:= helper.ToUserResponse(user)
 
-	w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(res)
+	response.HandleSuccess(w, http.StatusCreated, res)
 }
 
 func GetUsers(w http.ResponseWriter, r *http.Request) {
 	page, limit:= 1, 5
 
 	query:= r.URL.Query()
-	// pageStr:= query.Get("page")
-	// limitStr:= query.Get("limit")
 
 	if p := query.Get("page"); p != "" {
 		if val, err := strconv.Atoi(p); err == nil && val > 0 {
@@ -154,11 +146,10 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-
 	userList, total, err:= services.GetUsers(page, limit)
 	if err != nil {
 		log.Println("❌ ERROR: GetUsers service error: ", err)
-		http.Error(w, "Error fetching users", http.StatusBadRequest)
+		response.HandleError(w, err)
 		return
 	}
 
@@ -168,7 +159,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		users = append(users, helper.ToUserResponse(user))
 	}
 
-	response:= models.PaginatedUserResponse{
+	respData:= models.PaginatedUserResponse{
 		Data: users,
 		Page:  page,
 		Limit: limit,
@@ -180,9 +171,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("🔥 Request by==> id: %d  name: %s", userId, name)
 
-	w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	response.HandleSuccess(w, http.StatusOK, respData)
 }
 
 func GetUserById(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +179,7 @@ func GetUserById(w http.ResponseWriter, r *http.Request) {
 	id, err:= strconv.Atoi(idStr)
 	if err != nil {
 		log.Println("Invalid ID format")
-		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid ID format"))
 		return
 	}
 
@@ -208,9 +197,7 @@ func GetUserById(w http.ResponseWriter, r *http.Request) {
 		RoleID:	user.RoleID,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(res)
+	response.HandleSuccess(w, http.StatusOK, res)
 }
 
 func GetMe(w http.ResponseWriter, r *http.Request) {
@@ -221,28 +208,24 @@ func GetMe(w http.ResponseWriter, r *http.Request) {
 	user, err:= services.GetUserById(idInt)
 	if err != nil {
 		log.Println("❌ User not found")
-		http.Error(w, "😞 User not found", http.StatusNotFound)
+		response.HandleError(w, err)
 		return
 	}
 
-	response:= helper.ToUserResponse(*user)
+	respUser:= helper.ToUserResponse(*user)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	response.HandleSuccess(w, http.StatusOK, respUser)
 }
 
 func DeleteAllUsers(w http.ResponseWriter, r *http.Request) {
 	err:= services.DeleteAllUsers(r.Context())
 	if err != nil {
 		log.Println("❌ ERROR: DeleteAllUsers service error: ", err)
-		http.Error(w, "Error deleting users", http.StatusBadRequest)
+		response.HandleError(w, appErrors.InternalServerError("Error deleting users"))
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "All users deleted successfully 🗑️" })
+	response.HandleSuccess(w, http.StatusOK, map[string]string{"message": "All users deleted successfully 🗑️" })
 }
 
 func DeleteUserById(w http.ResponseWriter, r *http.Request) {
@@ -251,27 +234,25 @@ func DeleteUserById(w http.ResponseWriter, r *http.Request) {
 	pathId, err:= strconv.Atoi(idStr)
 	if err != nil {
 		log.Println("Invalid ID format")
-		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid ID format"))
 		return
 	}
 
 	// take ID from context
 	tokenId, ok:= r.Context().Value("user_id").(int)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		response.HandleError(w, appErrors.Unauthorized("Unauthorized"))
 		return
 	}
 
 	// call new DeleteUserWithAudit function
 	if err:= services.DeleteUserWithAudit(r.Context(), tokenId, pathId); err != nil {
 		log.Println("❌ ERROR: DeleteUserWithAudit service error: ", err)
-		http.Error(w, "Error deleting user", http.StatusBadRequest)
+		response.HandleError(w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "User deleted successfully 🗑️"})
+	response.HandleSuccess(w, http.StatusOK, map[string]string{"message": "User deleted successfully 🗑️"})
 }
 
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -281,7 +262,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	id, err:= strconv.Atoi(idStr)
 	if err != nil {
 		log.Println("Invalid ID format")
-		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid ID format"))
 		return
 	}
 
@@ -290,17 +271,17 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	if err:= decoder.Decode(&req); err != nil {
 		log.Println("update decode error:", err)
-		http.Error(w, "Invalid request body in Update", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid request body"))
 		return
 	}
 
 	if decoder.More() {
-		http.Error(w, "Invalid request body in update", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid request body"))
 		return
 	}
 
 	if err:= validation.ValidateUpdateUser(req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		response.HandleError(w, err)
 		return
 	}
 
@@ -308,23 +289,12 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	err = services.UpdateUser(id, updates)
 	if err != nil {
-		if err.Error() == "username already taken" {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-
-		if err.Error() == "User not found" {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, "Error updating user", http.StatusInternalServerError)
+		log.Println("❌ ERROR: UpdateUser service error: ", err)
+		response.HandleError(w, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "User Updated Successfully"})
+	response.HandleSuccess(w, http.StatusOK, map[string]string{"message": "User Updated Successfully"})
 }
 
 func Logout(w http.ResponseWriter, r *http.Request) {
@@ -335,31 +305,29 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 
 	if err:= decoder.Decode(&req); err != nil {
 		log.Println("Invalid request for logout")
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid request body"))
 		return
 	}
 
 	if decoder.More() {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		response.HandleError(w, appErrors.BadRequest("Invalid request body"))
 		return
 	}
 
 	if err:= validation.ValidateRefresh(req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		response.HandleError(w, err)
 		return
 	}
 
 	if err:= services.Logout(req.RefreshToken); err != nil {
 		log.Println("Error during logout")
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		response.HandleError(w, err)
 		return
 	}
 
 	log.Println("Logged out successfully")
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	response.HandleSuccess(w, http.StatusOK, map[string]string{
 		"message": "Logged out successfully",
 	})
 }

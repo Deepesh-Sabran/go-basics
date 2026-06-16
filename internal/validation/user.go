@@ -8,28 +8,40 @@ import (
 )
 
 func ValidateCreateUser(req models.CreateUserRequest) error {
+	errors := make(map[string]interface{})
+
 	if strings.TrimSpace(req.Name) == "" {
-		return appErrors.BadRequest("Name is required")
+		errors["name"] = "Name is required"
 	}
 
-	if req.Age < 0 {
-		return appErrors.BadRequest("Age must be greater than 0")
+	if req.Age <= 0 {
+		errors["age"] = "Age must be greater than 0"
 	}
 
 	if len(req.Password) < 8 {
-		return appErrors.BadRequest("Password must be at least 8 characters")
+		errors["password"] = "Password must be at least 8 characters"
+	}
+
+	if len(errors) > 0 {
+		return appErrors.ValidationErrorWithDetails("validation failed", errors)
 	}
 
 	return nil
 }
 
 func ValidateLogin(req models.LoginRequest) error {
+	errors := make(map[string]interface{})
+
 	if strings.TrimSpace(req.Name) == "" {
-		return appErrors.BadRequest("Name is required")
+		errors["name"] = "Name is required"
 	}
 
 	if strings.TrimSpace(req.Password) == "" {
-		return appErrors.BadRequest("Password is required")
+		errors["password"] = "Password is required"
+	}
+
+	if len(errors) > 0 {
+		return appErrors.ValidationErrorWithDetails("validation failed", errors)
 	}
 
 	return nil
@@ -44,20 +56,26 @@ func ValidateRefresh(req models.RefreshRequest) error {
 }
 
 func ValidateUpdateUser(req models.UpdateUserRequest) error {
+	errors := make(map[string]interface{})
+
 	if req.Name == nil && req.Age == nil && req.Password == nil {
 		return appErrors.BadRequest("at least one field is required")
 	}
 
 	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
-		return appErrors.BadRequest("name cannot be empty")
+		errors["name"] = "name cannot be empty"
 	}
 
 	if req.Age != nil && *req.Age <= 0 {
-		return appErrors.BadRequest("age must be greater than 0")
+		errors["age"] = "age must be greater than 0"
 	}
-	
+
 	if req.Password != nil && len(*req.Password) < 8 {
-		return appErrors.BadRequest("password must be at least 8 characters")
+		errors["password"] = "password must be at least 8 characters"
+	}
+
+	if len(errors) > 0 {
+		return appErrors.ValidationErrorWithDetails("validation failed", errors)
 	}
 
 	return nil
