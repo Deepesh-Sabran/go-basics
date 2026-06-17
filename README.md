@@ -85,7 +85,7 @@ Request → Auth Middleware (JWT) → Permission Middleware (RBAC) → Handler
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/Deepesh-Sabran/your-repo-name.git
+git clone https://github.com/Deepesh-Sabran/go-basics.git
 cd your-repo-name
 ```
 
